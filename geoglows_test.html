@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GEOGLOWS API Tester</title>
+</head>
+<body>
+    <h3>GEOGLOWS v2 Raw JSON Output</h3>
+    <pre id="jsonOutput">Fetching data...</pre>
+
+    <script>
+        // Example v2 9-digit river ID
+        const riverId = "760744755"; 
+        const url = `https://geoglows.ecmwf.int/api/v2/forecast/${riverId}?format=json`;
+
+        fetch(url)
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                // This displays the full structure so you can check keys 
+                // like data.flow_median and data.forecast_time
+                document.getElementById('jsonOutput').textContent = JSON.stringify(data, null, 2);
+                console.log("Full Data Object:", data);
+            })
+            .catch(error => {
+                document.getElementById('jsonOutput').textContent = "Error: " + error.message;
+                console.error("Fetch Error:", error);
+            });
+    </script>
+</body>
+</html>

@@ -4,38 +4,31 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-let forecastChart; // Store chart instance globally to refresh it
+let forecastChart;
 
-// 2. Load your specific CSV
+// 2. Load Dam Data from CSV
 async function loadDams() {
     try {
-        const data = await d3.csv("full_lhd_website.csv"); 
-        
+        const data = await d3.csv("full_lhd_website.csv");
         data.forEach(dam => {
             const lat = parseFloat(dam.Latitude);
             const lng = parseFloat(dam.Longitude);
-
             if (!isNaN(lat) && !isNaN(lng) && dam.LinkNo && dam.Qmin) {
                 const marker = L.marker([lat, lng]).addTo(map);
-                
                 const popupContent = `
                     <div class="popup-content">
-                        <strong style="font-size:1.1em;">${dam.Dam_Name}</strong><br>
-                        <b>Stream:</b> ${dam['River/Stream']}<br>
+                        <strong>${dam.Dam_Name}</strong><br>
                         <b>LinkNo:</b> ${dam.LinkNo}<br>
                         <hr>
                         <b>Dangerous Range:</b> ${dam.Qmin} - ${dam.Qmax} cfs
                         <button class="btn-check" onclick="checkSafety('${dam.LinkNo}', ${dam.Qmin}, ${dam.Qmax}, '${dam.Dam_Name}')">
                             Check Live Forecast
                         </button>
-                    </div>
-                `;
+                    </div>`;
                 marker.bindPopup(popupContent);
             }
         });
-    } catch (err) {
-        console.error("Error loading CSV:", err);
-    }
+    } catch (err) { console.error("Error loading CSV:", err); }
 }
 
 // 3. GEOGLOWS API Integration & Plotting
@@ -46,32 +39,34 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
         const response = await fetch(url);
         const data = await response.json();
 
+        // Use 'datetime' and 'flow_median' based on your JSON output
         if (data && data.flow_median && data.flow_median.length > 0) {
             
-            // 1. Convert all forecast data points to CFS
+            // Convert CMS to CFS
             const cfsData = data.flow_median.map(cms => cms * 35.3147);
-            const currentCfs = cfsData[0]; 
-            const labels = data.forecast_time || cfsData.map((_, i) => `Step ${i}`);
+            const currentCfs = cfsData[0];
 
-            // 2. Prepare Status Text
-            let statusText = `<strong>${damName} (LinkNo: ${linkNo})</strong>\n`;
-            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs\n`;
+            // Safely map the 'datetime' array to readable strings
+            const labels = (data.datetime || []).map(timeStr => {
+                const date = new Date(timeStr);
+                return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+            });
+
+            // Update Text Display
+            let statusText = `<strong>${damName} (LinkNo: ${linkNo})</strong><br>`;
+            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs | Range: ${qMin}-${qMax} cfs<br>`;
             
             if (currentCfs >= qMin && currentCfs <= qMax) {
-                statusText += `<span style="color:red; font-weight:bold;">⚠️ WARNING: Condition is DANGEROUS.</span>`;
-            } else if (currentCfs > qMax) {
-                statusText += `<span style="color:green; font-weight:bold;">✅ Status: Safe (Drowned Out).</span>`;
+                statusText += `<span style="color:red; font-weight:bold;">⚠️ WARNING: DANGEROUS CONDITION</span>`;
             } else {
-                statusText += `<span style="color:green; font-weight:bold;">✅ Status: Safe (Low Flow).</span>`;
+                statusText += `<span style="color:green; font-weight:bold;">✅ Status: Safe</span>`;
             }
 
-            // 3. Update Modal and Display
             document.getElementById('statusDisplay').innerHTML = statusText;
             document.getElementById('forecastModal').style.display = 'block';
 
-            // 4. Create/Update Chart
             const ctx = document.getElementById('forecastChart').getContext('2d');
-            if (forecastChart) forecastChart.destroy(); // Destroy previous chart if it exists
+            if (forecastChart) forecastChart.destroy();
 
             forecastChart = new Chart(ctx, {
                 type: 'line',
@@ -79,20 +74,13 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                     labels: labels,
                     datasets: [
                         {
-                            label: 'Flow Forecast (cfs)',
-                            data: cfsData,
-                            borderColor: '#3498db',
-                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                            fill: true,
-                            tension: 0.1
-                        },
-                        {
                             label: 'Min Dangerous Flow',
                             data: Array(cfsData.length).fill(qMin),
                             borderColor: '#e67e22',
                             borderDash: [10, 5],
                             pointRadius: 0,
-                            fill: false
+                            fill: '+1', // Fills to the next dataset (Max)
+                            backgroundColor: 'rgba(231, 76, 60, 0.3)' // Red tint area
                         },
                         {
                             label: 'Max Dangerous Flow',
@@ -101,13 +89,25 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                             borderDash: [10, 5],
                             pointRadius: 0,
                             fill: false
+                        },
+                        {
+                            label: 'Flow Forecast (cfs)',
+                            data: cfsData,
+                            borderColor: '#3498db',
+                            backgroundColor: 'transparent', // No blue fill
+                            fill: false,
+                            tension: 0.2,
+                            borderWidth: 3
                         }
                     ]
                 },
                 options: {
                     responsive: true,
+                    plugins: {
+                        filler: { propagate: true }
+                    },
                     scales: {
-                        y: {
+                        y: { 
                             beginAtZero: true,
                             title: { display: true, text: 'Discharge (cfs)' }
                         },
@@ -117,11 +117,9 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                     }
                 }
             });
-        } else {
-            alert(`No flow data found for LinkNo: ${linkNo}.`);
         }
     } catch (err) {
-        console.error("Connection Error:", err);
+        console.error("API Error:", err);
         alert("Error connecting to the GEOGLOWS API.");
     }
 }
