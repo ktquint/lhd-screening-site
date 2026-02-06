@@ -28,7 +28,9 @@ async function loadDams() {
                 marker.bindPopup(popupContent);
             }
         });
-    } catch (err) { console.error("Error loading CSV:", err); }
+    } catch (err) { 
+        console.error("Error loading CSV:", err); 
+    }
 }
 
 // 3. GEOGLOWS API Integration & Plotting
@@ -39,14 +41,15 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
         const response = await fetch(url);
         const data = await response.json();
 
-        // Use 'datetime' and 'flow_median' based on your JSON output
         if (data && data.flow_median && data.flow_median.length > 0) {
             
-            // Convert CMS to CFS
-            const cfsData = data.flow_median.map(cms => cms * 35.3147);
-            const currentCfs = cfsData[0];
+            // Convert CMS to CFS for Median and Uncertainty Bounds
+            const cfsMedian = data.flow_median.map(cms => cms * 35.3147);
+            const cfsUpper = (data.flow_uncertainty_upper || []).map(cms => cms * 35.3147);
+            const cfsLower = (data.flow_uncertainty_lower || []).map(cms => cms * 35.3147);
+            
+            const currentCfs = cfsMedian[0];
 
-            // Safely map the 'datetime' array to readable strings
             const labels = (data.datetime || []).map(timeStr => {
                 const date = new Date(timeStr);
                 return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
@@ -54,7 +57,7 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
 
             // Update Text Display
             let statusText = `<strong>${damName} (LinkNo: ${linkNo})</strong><br>`;
-            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs | Range: ${qMin}-${qMax} cfs<br>`;
+            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs | Range: ${qMin.toFixed(0)}-${qMax.toFixed(0)} cfs<br>`;
             
             if (currentCfs >= qMin && currentCfs <= qMax) {
                 statusText += `<span style="color:red; font-weight:bold;">⚠️ WARNING: DANGEROUS CONDITION</span>`;
@@ -74,30 +77,50 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                     labels: labels,
                     datasets: [
                         {
-                            label: 'Min Dangerous Flow',
-                            data: Array(cfsData.length).fill(qMin),
-                            borderColor: '#e67e22',
-                            borderDash: [10, 5],
-                            pointRadius: 0,
-                            fill: '+1', // Fills to the next dataset (Max)
-                            backgroundColor: 'rgba(231, 76, 60, 0.3)' // Red tint area
-                        },
-                        {
                             label: 'Max Dangerous Flow',
-                            data: Array(cfsData.length).fill(qMax),
+                            data: Array(cfsMedian.length).fill(qMax),
                             borderColor: '#e74c3c',
                             borderDash: [10, 5],
+                            borderWidth: 2,
                             pointRadius: 0,
-                            fill: false
+                            fill: false // This line stays on top
                         },
                         {
-                            label: 'Flow Forecast (cfs)',
-                            data: cfsData,
-                            borderColor: '#3498db',
-                            backgroundColor: 'transparent', // No blue fill
+                            label: 'Dangerous Flow Range',
+                            data: Array(cfsMedian.length).fill(qMin),
+                            borderColor: '#e74c3c', 
+                            borderDash: [10, 5],
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: 0, // Fills UP to the first dataset (Max)
+                            backgroundColor: 'rgba(231, 76, 60, 0.2)'
+                        },
+                        {
+                            label: 'Median Forecast (cfs)',
+                            data: cfsMedian,
+                            borderColor: '#000000',
+                            backgroundColor: 'transparent',
                             fill: false,
                             tension: 0.2,
-                            borderWidth: 3
+                            borderWidth: 3,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Forecast Uncertainty (Upper)',
+                            data: cfsUpper,
+                            borderColor: 'rgba(52, 152, 219, 0.5)',
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            fill: '+1',
+                            backgroundColor: 'rgba(52, 152, 219, 0.2)'
+                        },
+                        {
+                            label: 'Forecast Uncertainty (Lower)',
+                            data: cfsLower,
+                            borderColor: 'rgba(52, 152, 219, 0.5)',
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            fill: false
                         }
                     ]
                 },
@@ -120,7 +143,6 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
         }
     } catch (err) {
         console.error("API Error:", err);
-        alert("Error connecting to the GEOGLOWS API.");
     }
 }
 
