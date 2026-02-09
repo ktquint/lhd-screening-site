@@ -1,5 +1,8 @@
-// 1. Initialize Map with Canvas preference for better performance
+// 1. Initialize Map with Canvas preference
+// We remove the hardcoded setView here if you want it to be fully dynamic, 
+// or keep it to start at a specific zoom level.
 const map = L.map('map', { preferCanvas: true }).setView([39.82, -98.57], 4);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
@@ -196,6 +199,11 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
         console.error("API Error:", err);
     }
 }
+
+// Handle window resizing to keep the map responsive
+window.addEventListener('resize', () => {
+    map.invalidateSize();
+});
 
 // Initialize components
 loadDams();
