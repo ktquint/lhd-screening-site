@@ -33,7 +33,7 @@ async function loadHydrography() {
 // 2. Load Dam Data from CSV
 async function loadDams() {
     try {
-        const data = await d3.csv("full_lhd_website.csv");
+        const data = await d3.csv("data/full_lhd_website.csv");
         data.forEach(dam => {
             const lat = parseFloat(dam.Latitude);
             const lng = parseFloat(dam.Longitude);
@@ -41,12 +41,19 @@ async function loadDams() {
             const qMinVal = Math.round(parseFloat(dam.Qmin));
             const qMaxVal = Math.round(parseFloat(dam.Qmax));
 
+            // Extract location and fatality data
+            const city = dam.City || "Unknown City";
+            const state = dam["State Abbreviation"] || "";
+            const location = city + (state ? `, ${state}` : "");
+            const fatalities = dam.NumberOfFatalities || 0;
+
             if (!isNaN(lat) && !isNaN(lng) && dam.LinkNo && !isNaN(qMinVal)) {
                 const marker = L.marker([lat, lng]).addTo(map);
                 const popupContent = `
                     <div class="popup-content">
                         <strong>${dam.Dam_Name}</strong><br>
-                        <b>LinkNo:</b> ${dam.LinkNo}<br>
+                        <b>Location:</b> ${location}<br>
+                        <b>Fatalities:</b> ${fatalities}<br>
                         <hr>
                         <b>Dangerous Range:</b> ${qMinVal} - ${qMaxVal} cfs
                         <button class="btn-check" onclick="checkSafety('${dam.LinkNo}', ${qMinVal}, ${qMaxVal}, '${dam.Dam_Name}')">
@@ -56,6 +63,7 @@ async function loadDams() {
                 marker.bindPopup(popupContent);
             }
         });
+        console.log("Dam markers initialized.");
     } catch (err) { 
         console.error("Error loading CSV:", err); 
     }
@@ -110,11 +118,11 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
             });
 
             // Update Text Display
-            let statusText = `<strong>${damName} (LinkNo: ${linkNo})</strong><br>`;
-            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs | Range: ${qMin.toFixed(0)}-${qMax.toFixed(0)} cfs<br>`;
+            let statusText = `<strong>${damName}</strong><br>`;
+            statusText += `Current Forecast: ${currentCfs.toFixed(0)} cfs | Range: ${qMin.toFixed(0)}-${qMax.toFixed(0)} cfs<br>`;
             
             if (isAnyDangerous) {
-                statusText += `<span style="color:red; font-weight:bold;">⚠️ WARNING: DANGEROUS CONDITIONS FORECASTED</span>`;
+                statusText += `<span style="color:red; font-weight:bold;">⚠️ WARNING: DANGEROUS CONDITIONS FORECASTED ⚠️</span>`;
             } else {
                 statusText += `<span style="color:green; font-weight:bold;">✅ Status: Safe for Forecast Period</span>`;
             }
