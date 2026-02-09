@@ -21,7 +21,7 @@ async function loadHydrography() {
             L.geoPackageFeatureLayer([], {
                 geoPackageUrl: `hydrography/${filename}`,
                 layerName: 'features', 
-                style: { color: '#3498db', weight: 1.2, opacity: 0.5 }
+                style: { color: '#3498db', weight: 1.2, opacity: 1.0 }
             }).addTo(map);
         } catch (err) {
             console.warn(`Could not load background layer ${filename}:`, err);
