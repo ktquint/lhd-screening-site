@@ -1,8 +1,30 @@
-const map = L.map('map', { preferCanvas: true }).setView([39.82, -98.57], 4);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// 1. Initialize Map with multiple base layers
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
+});
+
+const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+});
+
+const terrain = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)'
+});
+
+const map = L.map('map', { 
+    preferCanvas: true,
+    layers: [osm] // Default layer
+}).setView([39.82, -98.57], 4);
+
+// Define base maps for the control toggle
+const baseMaps = {
+    "Street Map": osm,
+    "Satellite": satellite,
+    "Terrain": terrain
+};
+
+// Add the background maps button (Layers Control)
+L.control.layers(baseMaps).addTo(map);
 
 let forecastChart;
 let allDams = []; 
@@ -55,7 +77,6 @@ function renderMarkers() {
             const qMaxVal = Math.round(parseFloat(dam.Qmax));
             const hasSafetyData = !isNaN(qMinVal) && dam.LinkNo;
 
-            // Filter: skip if user wants only sites with forecasts and this site lacks data
             if (showOnlyForecast && !hasSafetyData) return;
 
             const city = dam.City || "Unknown City";
@@ -195,10 +216,8 @@ legend.onAdd = function (map) {
         </div>
     `;
 
-    // Prevent map clicks from passing through the legend
     L.DomEvent.disableClickPropagation(div);
     
-    // Use a timeout to ensure the DOM element exists before adding the listener
     setTimeout(() => {
         const filterCheckbox = document.getElementById('forecastFilter');
         if (filterCheckbox) {
