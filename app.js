@@ -16,7 +16,6 @@ const hydroFiles = [
 async function loadHydrography() {
     hydroFiles.forEach(filename => {
         try {
-            // Note: If 'features' doesn't work, try 'streams' or the filename minus '.gpkg'
             L.geoPackageFeatureLayer([], {
                 geoPackageUrl: `hydrography/${filename}`,
                 layerName: 'features', 
@@ -36,7 +35,6 @@ async function loadDams() {
             const lat = parseFloat(dam.Latitude);
             const lng = parseFloat(dam.Longitude);
             
-            // Round dangerous flow bounds to 0 decimals for the map popup
             const qMinVal = Math.round(parseFloat(dam.Qmin));
             const qMaxVal = Math.round(parseFloat(dam.Qmax));
 
@@ -55,9 +53,8 @@ async function loadDams() {
                 marker.bindPopup(popupContent);
             }
         });
-        console.log("Dam markers initialized.");
     } catch (err) { 
-        console.error("Error loading CSV (Ensure you are using a local server like Live Server):", err); 
+        console.error("Error loading CSV:", err); 
     }
 }
 
@@ -70,22 +67,54 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
         const data = await response.json();
 
         if (data && data.flow_median && data.flow_median.length > 0) {
-            const cfsMedian = data.flow_median.map(cms => cms * 35.3147);
-            const cfsUpper = (data.flow_uncertainty_upper || []).map(cms => cms * 35.3147);
-            const cfsLower = (data.flow_uncertainty_lower || []).map(cms => cms * 35.3147);
+            
+            // --- Align Start Time to Local Current Hour ---
+            const nowLocal = new Date();
+            nowLocal.setMinutes(0, 0, 0);
+
+            // Find the data point that matches or follows the current hour
+            const startIndex = data.datetime.findIndex(timeStr => new Date(timeStr).getTime() >= nowLocal.getTime());
+            const finalStart = startIndex === -1 ? 0 : startIndex;
+
+            // Slice arrays to start from the current hour
+            const slicedMedian = data.flow_median.slice(finalStart);
+            const slicedUpper = (data.flow_uncertainty_upper || []).slice(finalStart);
+            const slicedLower = (data.flow_uncertainty_lower || []).slice(finalStart);
+            const slicedDatetime = (data.datetime || []).slice(finalStart);
+
+            // Convert CMS to CFS
+            const cfsMedian = slicedMedian.map(cms => cms * 35.3147);
+            const cfsUpper = slicedUpper.map(cms => cms * 35.3147);
+            const cfsLower = slicedLower.map(cms => cms * 35.3147);
             
             const currentCfs = cfsMedian[0];
-            const labels = (data.datetime || []).map(timeStr => {
-                const date = new Date(timeStr);
-                return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+
+            // Check if any part of the forecast range overlaps the danger zone
+            const isAnyDangerous = cfsMedian.some((_, i) => {
+                const low = cfsLower[i];
+                const high = cfsUpper[i];
+                return high >= qMin && low <= qMax;
             });
 
-            // Update Status Display
+            // Format labels to match local browser time
+            const labels = slicedDatetime.map(timeStr => {
+                const date = new Date(timeStr);
+                return date.toLocaleString([], { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: '2-digit'
+                });
+            });
+
+            // Update Text Display
             let statusText = `<strong>${damName} (LinkNo: ${linkNo})</strong><br>`;
-            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs | Range: ${qMin}-${qMax} cfs<br>`;
-            statusText += (currentCfs >= qMin && currentCfs <= qMax) 
-                ? `<span style="color:red; font-weight:bold;">⚠️ WARNING: DANGEROUS CONDITION</span>`
-                : `<span style="color:green; font-weight:bold;">✅ Status: Safe</span>`;
+            statusText += `Current Forecast: ${currentCfs.toFixed(2)} cfs | Range: ${qMin.toFixed(0)}-${qMax.toFixed(0)} cfs<br>`;
+            
+            if (isAnyDangerous) {
+                statusText += `<span style="color:red; font-weight:bold;">⚠️ WARNING: DANGEROUS CONDITIONS FORECASTED</span>`;
+            } else {
+                statusText += `<span style="color:green; font-weight:bold;">✅ Status: Safe for Forecast Period</span>`;
+            }
 
             document.getElementById('statusDisplay').innerHTML = statusText;
             document.getElementById('forecastModal').style.display = 'block';
@@ -99,7 +128,7 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                     labels: labels,
                     datasets: [
                         {
-                            label: 'Max Dangerous Boundary',
+                            label: 'Max Dangerous Flow',
                             data: Array(cfsMedian.length).fill(qMax),
                             borderColor: '#e74c3c',
                             borderDash: [10, 5],
@@ -114,13 +143,14 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                             borderDash: [10, 5],
                             borderWidth: 2,
                             pointRadius: 0,
-                            fill: 0, // Fills up to the Max boundary
+                            fill: 0,
                             backgroundColor: 'rgba(231, 76, 60, 0.2)'
                         },
                         {
                             label: 'Median Forecast (cfs)',
                             data: cfsMedian,
                             borderColor: '#000000',
+                            backgroundColor: 'transparent',
                             fill: false,
                             tension: 0.2,
                             borderWidth: 3,
@@ -147,17 +177,23 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                 },
                 options: {
                     responsive: true,
-                    plugins: { filler: { propagate: true } },
+                    plugins: {
+                        filler: { propagate: true }
+                    },
                     scales: {
-                        y: { beginAtZero: true, title: { display: true, text: 'Discharge (cfs)' } },
-                        x: { ticks: { maxTicksLimit: 10 } }
+                        y: { 
+                            beginAtZero: true,
+                            title: { display: true, text: 'Discharge (cfs)' }
+                        },
+                        x: {
+                            ticks: { maxTicksLimit: 10 }
+                        }
                     }
                 }
             });
         }
     } catch (err) {
         console.error("API Error:", err);
-        alert("Error connecting to the GEOGLOWS API.");
     }
 }
 
