@@ -5,6 +5,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let forecastChart;
+let allDams = []; 
+let markers = L.markerClusterGroup(); 
 
 // --- Background Hydrography (.gpkg) Loading ---
 const hydroFiles = [
@@ -27,73 +29,78 @@ async function loadHydrography() {
     });
 }
 
-// 2. Load Dam Data with Clustering
+// 2. Load Dam Data
 async function loadDams() {
     try {
-        const data = await d3.csv("data/full_lhd_website.csv");
-        
-        // Initialize the cluster group
-        const markers = L.markerClusterGroup(); 
-
-        data.forEach(dam => {
-            const lat = parseFloat(dam.Latitude);
-            const lng = parseFloat(dam.Longitude);
-            
-            if (!isNaN(lat) && !isNaN(lng)) {
-                const qMinVal = Math.round(parseFloat(dam.Qmin));
-                const qMaxVal = Math.round(parseFloat(dam.Qmax));
-                const city = dam.City || "Unknown City";
-                const state = dam["State Abbreviation"] || "";
-                const location = city + (state ? `, ${state}` : "");
-                const fatalities = dam.NumberOfFatalities || 0;
-
-                const hasSafetyData = !isNaN(qMinVal) && dam.LinkNo;
-                
-                const markerHtml = `<div style="background-color: ${hasSafetyData ? '#3498db' : '#95a5a6'}; 
-                                    width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`;
-                
-                const customIcon = L.divIcon({
-                    html: markerHtml,
-                    className: 'custom-dam-icon',
-                    iconSize: [12, 12]
-                });
-
-                const marker = L.marker([lat, lng], { icon: customIcon });
-
-                let popupContent = `
-                    <div class="popup-content">
-                        <strong>${dam.Dam_Name}</strong><br>
-                        <b>Location:</b> ${location}<br>
-                        <b>Fatalities:</b> ${fatalities}<br>
-                        <hr>`;
-                
-                if (hasSafetyData) {
-                    popupContent += `
-                        <b>Dangerous Range:</b> ${qMinVal} - ${qMaxVal} cfs
-                        <button class="btn-check" onclick="checkSafety('${dam.LinkNo}', ${qMinVal}, ${qMaxVal}, '${dam.Dam_Name}')">
-                            Check Live Forecast
-                        </button>`;
-                } else {
-                    popupContent += `<i>Safety flow range data unavailable for this site.</i>`;
-                }
-
-                popupContent += `</div>`;
-                marker.bindPopup(popupContent);
-                
-                // Add marker to the cluster group instead of the map
-                markers.addLayer(marker); 
-            }
-        });
-        
-        // Add the entire group to the map at once for better performance
-        map.addLayer(markers); 
+        allDams = await d3.csv("data/full_lhd_website.csv");
+        renderMarkers();
         console.log("Dam markers clustered and initialized.");
     } catch (err) { 
         console.error("Error loading CSV:", err); 
     }
 }
 
-// 3. GEOGLOWS API Integration & Plotting
+// 3. Render Markers with Filter Logic
+function renderMarkers() {
+    markers.clearLayers(); 
+    const filterEl = document.getElementById('forecastFilter');
+    const showOnlyForecast = filterEl ? filterEl.checked : false;
+
+    allDams.forEach(dam => {
+        const lat = parseFloat(dam.Latitude);
+        const lng = parseFloat(dam.Longitude);
+        
+        if (!isNaN(lat) && !isNaN(lng)) {
+            const qMinVal = Math.round(parseFloat(dam.Qmin));
+            const qMaxVal = Math.round(parseFloat(dam.Qmax));
+            const hasSafetyData = !isNaN(qMinVal) && dam.LinkNo;
+
+            // Filter: skip if user wants only sites with forecasts and this site lacks data
+            if (showOnlyForecast && !hasSafetyData) return;
+
+            const city = dam.City || "Unknown City";
+            const state = dam["State Abbreviation"] || "";
+            const location = city + (state ? `, ${state}` : "");
+            const fatalities = dam.NumberOfFatalities || 0;
+            
+            const markerHtml = `<div style="background-color: ${hasSafetyData ? '#3498db' : '#95a5a6'}; 
+                                width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`;
+            
+            const customIcon = L.divIcon({
+                html: markerHtml,
+                className: 'custom-dam-icon',
+                iconSize: [12, 12]
+            });
+
+            const marker = L.marker([lat, lng], { icon: customIcon });
+
+            let popupContent = `
+                <div class="popup-content">
+                    <strong>${dam.Dam_Name}</strong><br>
+                    <b>Location:</b> ${location}<br>
+                    <b>Fatalities:</b> ${fatalities}<br>
+                    <hr>`;
+            
+            if (hasSafetyData) {
+                popupContent += `
+                    <b>Dangerous Range:</b> ${qMinVal} - ${qMaxVal} cfs
+                    <button class="btn-check" onclick="checkSafety('${dam.LinkNo}', ${qMinVal}, ${qMaxVal}, '${dam.Dam_Name}')">
+                        Check Live Forecast
+                    </button>`;
+            } else {
+                popupContent += `<i>Safety flow range data unavailable for this site.</i>`;
+            }
+
+            popupContent += `</div>`;
+            marker.bindPopup(popupContent);
+            markers.addLayer(marker); 
+        }
+    });
+    
+    map.addLayer(markers); 
+}
+
+// 4. GEOGLOWS API Integration & Plotting
 async function checkSafety(linkNo, qMin, qMax, damName) {
     const url = `https://geoglows.ecmwf.int/api/v2/forecast/${linkNo}?format=json`;
     
@@ -172,14 +179,33 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
     }
 }
 
-// Legend
+// 5. Legend and Filter Integration
 const legend = L.control({ position: 'bottomright' });
 legend.onAdd = function (map) {
     const div = L.DomUtil.create('div', 'info legend');
-    div.innerHTML += '<strong>Dam Status</strong><br>';
-    div.innerHTML += '<i style="background: #3498db"></i> Forecast Available<br>';
-    div.innerHTML += '<i style="background: #95a5a6"></i> No Safety Data<br>';
-    div.innerHTML += '<i style="background: #3498db; opacity: 0.5; border-radius: 0; border: none; height: 2px; width: 15px; margin-top: 11px;"></i> Hydrography<br>';
+    div.innerHTML = `
+        <strong>Dam Status</strong><br>
+        <i style="background: #3498db"></i> Forecast Available<br>
+        <i style="background: #95a5a6"></i> No Safety Data<br>
+        <i style="background: #3498db; opacity: 0.5; border-radius: 0; border: none; height: 2px; width: 15px; margin-top: 11px;"></i> Hydrography<br>
+        <div class="filter-section" style="border-top: 1px solid #ccc; margin-top: 8px; padding-top: 8px;">
+            <label style="cursor: pointer;">
+                <input type="checkbox" id="forecastFilter"> Hide sites without forecasts
+            </label>
+        </div>
+    `;
+
+    // Prevent map clicks from passing through the legend
+    L.DomEvent.disableClickPropagation(div);
+    
+    // Use a timeout to ensure the DOM element exists before adding the listener
+    setTimeout(() => {
+        const filterCheckbox = document.getElementById('forecastFilter');
+        if (filterCheckbox) {
+            filterCheckbox.addEventListener('change', renderMarkers);
+        }
+    }, 0);
+
     return div;
 };
 legend.addTo(map);
