@@ -28,7 +28,7 @@ L.control.layers(baseMaps).addTo(map);
 
 let forecastChart;
 let allDams = []; 
-let markers = L.markerClusterGroup(); 
+let markers = L.layerGroup(); 
 
 // --- Background Hydrography (.gpkg) Loading ---
 const hydroFiles = [
@@ -73,6 +73,9 @@ function renderMarkers() {
         const lng = parseFloat(dam.Longitude);
         
         if (!isNaN(lat) && !isNaN(lng)) {
+            // Filter out sites that don't have a US State abbreviation
+            if (!dam["State Abbreviation"]) return;
+
             const qMinVal = Math.round(parseFloat(dam.Qmin));
             const qMaxVal = Math.round(parseFloat(dam.Qmax));
             const hasSafetyData = !isNaN(qMinVal) && dam.LinkNo;
@@ -82,18 +85,16 @@ function renderMarkers() {
             const city = dam.City || "Unknown City";
             const state = dam["State Abbreviation"] || "";
             const location = city + (state ? `, ${state}` : "");
-            const fatalities = dam.NumberOfFatalities || 0;
+            const fatalities = parseInt(dam.NumberOfFatalities) || 0;
             
-            const markerHtml = `<div style="background-color: ${hasSafetyData ? '#3498db' : '#95a5a6'}; 
-                                width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>`;
-            
-            const customIcon = L.divIcon({
-                html: markerHtml,
-                className: 'custom-dam-icon',
-                iconSize: [12, 12]
+            const marker = L.circleMarker([lat, lng], {
+                radius: 6,
+                fillColor: fatalities > 0 ? '#e74c3c' : '#3498db',
+                color: 'white',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 1
             });
-
-            const marker = L.marker([lat, lng], { icon: customIcon });
 
             let popupContent = `
                 <div class="popup-content">
@@ -189,7 +190,7 @@ async function checkSafety(linkNo, qMin, qMax, damName) {
                     responsive: true,
                     plugins: { filler: { propagate: true } },
                     scales: {
-                        y: { beginAtZero: true, title: { display: true, text: 'Discharge (cfs)' } },
+                        y: { beginAtZero: true, title: { display: true, text: 'Streamflow (cfs)' } },
                         x: { ticks: { maxTicksLimit: 10 } }
                     }
                 }
@@ -206,9 +207,8 @@ legend.onAdd = function (map) {
     const div = L.DomUtil.create('div', 'info legend');
     div.innerHTML = `
         <strong>Dam Status</strong><br>
-        <i style="background: #3498db"></i> Forecast Available<br>
-        <i style="background: #95a5a6"></i> No Safety Data<br>
-        <i style="background: #3498db; opacity: 0.5; border-radius: 0; border: none; height: 2px; width: 15px; margin-top: 11px;"></i> Hydrography<br>
+        <i style="background: #e74c3c"></i> Fatality Recorded<br>
+        <i style="background: #3498db"></i> No Recorded Fatalities<br>
         <div class="filter-section" style="border-top: 1px solid #ccc; margin-top: 8px; padding-top: 8px;">
             <label style="cursor: pointer;">
                 <input type="checkbox" id="forecastFilter"> Hide sites without forecasts
