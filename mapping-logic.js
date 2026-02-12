@@ -1,4 +1,8 @@
 // 1. Initialize Map with multiple base layers
+let forecastChart;
+let allDams = []; 
+let markers = L.layerGroup(); 
+
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors'
 });
@@ -23,12 +27,91 @@ const baseMaps = {
     "Terrain": terrain
 };
 
+// Add Search Control
+const SearchControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function() {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        container.style.background = 'white';
+        container.style.padding = '5px';
+        container.style.position = 'relative';
+
+        const input = L.DomUtil.create('input', '', container);
+        input.type = 'text';
+        input.placeholder = 'Search Dams, City, State...';
+        input.style.width = '200px';
+        input.style.padding = '4px';
+
+        const resultsDiv = L.DomUtil.create('div', '', container);
+        resultsDiv.style.display = 'none';
+        resultsDiv.style.position = 'absolute';
+        resultsDiv.style.top = '100%';
+        resultsDiv.style.left = '0';
+        resultsDiv.style.right = '0';
+        resultsDiv.style.backgroundColor = 'white';
+        resultsDiv.style.border = '1px solid #ccc';
+        resultsDiv.style.zIndex = '10000';
+        resultsDiv.style.maxHeight = '200px';
+        resultsDiv.style.overflowY = 'auto';
+
+        L.DomEvent.disableClickPropagation(container);
+
+        input.addEventListener('input', (e) => {
+            const val = e.target.value.toLowerCase();
+            resultsDiv.innerHTML = '';
+            if (val.length < 2) {
+                resultsDiv.style.display = 'none';
+                return;
+            }
+
+            const matches = allDams.filter(d => {
+                const name = (d.Dam_Name || '').toLowerCase();
+                const city = (d.City || '').toLowerCase();
+                const state = (d['State Abbreviation'] || '').toLowerCase();
+                return name.includes(val) || city.includes(val) || state.includes(val);
+            }).slice(0, 10);
+
+            if (matches.length > 0) {
+                resultsDiv.style.display = 'block';
+                matches.forEach(dam => {
+                    const div = document.createElement('div');
+                    div.style.padding = '5px';
+                    div.style.cursor = 'pointer';
+                    div.style.borderBottom = '1px solid #eee';
+                    div.style.fontSize = '12px';
+                    
+                    const loc = [dam.City, dam['State Abbreviation']].filter(Boolean).join(', ');
+                    div.innerHTML = `<strong>${dam.Dam_Name}</strong><br><span style="color:#666;">${loc}</span>`;
+                    
+                    div.onmouseover = () => div.style.backgroundColor = '#f0f0f0';
+                    div.onmouseout = () => div.style.backgroundColor = 'white';
+                    
+                    div.onclick = () => {
+                        const lat = parseFloat(dam.Latitude);
+                        const lng = parseFloat(dam.Longitude);
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            map.setView([lat, lng], 12);
+                            markers.eachLayer(l => {
+                                if (l.getLatLng().lat === lat && l.getLatLng().lng === lng) l.openPopup();
+                            });
+                        }
+                        input.value = dam.Dam_Name;
+                        resultsDiv.style.display = 'none';
+                    };
+                    resultsDiv.appendChild(div);
+                });
+            } else {
+                resultsDiv.style.display = 'none';
+            }
+        });
+
+        return container;
+    }
+});
+map.addControl(new SearchControl());
+
 // Add the background maps button (Layers Control)
 L.control.layers(baseMaps).addTo(map);
-
-let forecastChart;
-let allDams = []; 
-let markers = L.layerGroup(); 
 
 // --- Background Hydrography (.gpkg) Loading ---
 const hydroFiles = [
